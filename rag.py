@@ -44,6 +44,7 @@ llm = ChatOpenAI(
     openai_api_base=os.getenv("OPENAI_API_BASE", "https://api.proxyapi.ru/openai/v1"),
     model=os.getenv("CHAT_MODEL", "gpt-5.4-nano"),
     temperature=float(os.getenv("CHAT_TEMPERATURE", "0.2")),
+    max_tokens=int(os.getenv("CHAT_MAX_TOKENS", "140")),
 )  # [attached_file:1]
 
 def _clean_context(s: str) -> str:
@@ -140,7 +141,18 @@ def answer_with_rag(question: str, fname_filter: Optional[str] = None) -> str:
 
     system_instr = (
         "Ты — помощник, отвечающий строго по предоставленному контексту. "
-        "Если в контексте нет ответа, так и скажи, не выдумывай."
+        "Если в контексте нет ответа, так и скажи, не выдумывай.\n"
+        "Твой ответ будет озвучен вслух синтезатором речи, поэтому пиши так, "
+        "как говорят люди:\n"
+        "- никакой разметки: без звёздочек, решёток, дефисов-списков и заголовков;\n"
+        "- без ссылок на источники, номеров в скобках, фамилий авторов и инициалов;\n"
+        "- без сокращений: пиши «нашей эры», «то есть», «года» полностью;\n"
+        "- века и числа записывай словами в нужном падеже: "
+        "«в седьмом веке до нашей эры», «двадцать лет»;\n"
+        "- не цитируй источники дословно, передавай смысл своими словами;\n"
+        "- одно-два коротких предложения, не более 250 символов всего;\n"
+        "- отвечай как экскурсовод: живо, конкретно, одна главная мысль;\n"
+        "- сразу по сути, без вводных вроде «в тексте говорится» и «также упоминается»."
     )  # [attached_file:1]
     prompt = (
         f"{system_instr}\n\n"
@@ -165,3 +177,175 @@ def answer_with_rag(question: str, fname_filter: Optional[str] = None) -> str:
     logger.debug("[rag] answer_len_chars=%d", len(text))  # [attached_file:1]
     return text if text else "Упс! Что-то пошло не так! Попробуй еще!"  # [attached_file:1]
 
+
+# --- Режим «интересный факт» ---
+import random
+from qdrant_client import models as qmodels
+
+fact_log = logging.getLogger("uvicorn.error")
+
+_FACT_RE = re.compile(r"интересн|любопытн|удивительн|удиви|необычн|факт", re.IGNORECASE)
+_FACT_STOP = {
+    "расскажи", "расскажите", "скажи", "скажите", "поведай", "давай", "дай", "назови",
+    "мне", "нам", "пожалуйста", "что", "что-нибудь", "что-то", "нибудь", "какой",
+    "какой-нибудь", "какой-то", "какую", "какое", "какие", "еще", "ещё", "один", "одну",
+    "одно", "самый", "самое", "самую", "про", "обо", "это", "вот", "можешь", "можно",
+    "хочу", "узнать", "меня", "нас", "бывает", "было", "есть", "знаешь", "новенькое", "новое", "олень",
+}
+_FACT_SEEDS = ["золото", "курган", "олень", "конь", "оружие", "пантера", "грифон",
+               "гривна", "погребение", "царь", "птица", "звериный стиль"]
+
+
+_FACT_STRONG = re.compile(
+    r"\bфакт(?!ическ)|\bудиви(?:ть|те)?\b|что\s+(?:есть\s+|бывает\s+)?(?:интересн|любопытн|необычн|удивительн)",
+    re.IGNORECASE,
+)
+_FACT_ASK = re.compile(r"расскаж|скаж|поведа|давай|нибудь|что-то|\bещ[её]\b", re.IGNORECASE)
+
+
+def is_fact_request(question: str) -> bool:
+    q = question or ""
+    return bool(_FACT_STRONG.search(q) or (_FACT_RE.search(q) and _FACT_ASK.search(q)))
+
+
+def _fact_topic(question: str) -> str:
+    words = re.findall(r"[а-яёa-z0-9-]+", (question or "").lower())
+    keep = [w for w in words
+            if len(w) > 2 and w not in _FACT_STOP
+            and not _FACT_RE.search(w) and not w.startswith("скиф")]
+    return " ".join(keep)
+
+
+def _points_to_texts(points) -> List[str]:
+    out: List[str] = []
+    for p in points or []:
+        payload = getattr(p, "payload", None)
+        if payload is None and isinstance(p, dict):
+            payload = p.get("payload")
+        raw = _pluck_text(payload)
+        if raw:
+            out.append(_clean_context(raw))
+    return out
+
+
+def _random_contexts(n: int = 10) -> List[str]:
+    try:
+        res = qdrant.query_points(
+            collection_name=COLLECTION,
+            query=qmodels.SampleQuery(sample=qmodels.Sample.RANDOM),
+            limit=n,
+            with_payload=True,
+        )
+        return _points_to_texts(getattr(res, "points", None))
+    except Exception as e:
+        fact_log.warning("[fact] random sample failed (%s), fallback to seed word", e)
+        return get_contexts(random.choice(_FACT_SEEDS), top_k=n)
+
+
+def _answer_fact_llm(question: str) -> str:
+    topic = _fact_topic(question)
+    pool = get_contexts(topic, top_k=12) if topic else _random_contexts(14)
+    pool = [c for c in pool if len(c) >= 200] or pool
+    contexts = random.sample(pool, min(6, len(pool)))
+    fact_log.info("[fact] topic=%r pool=%d used=%d", topic, len(pool), len(contexts))
+    if not contexts:
+        return "Хм, сейчас ничего удивительного не нашлось. Спроси ещё разок!"
+
+    instr = (
+        "Перед тобой фрагменты научных текстов о скифах и их искусстве. "
+        "Выбери из них ровно один факт, который удивит обычного слушателя, а не специалиста: "
+        "необычный обычай, рекордная находка, неожиданный материал или размер, загадка, "
+        "забавная деталь, конкретное число. Не бери сухие сведения о классификации, датировке, "
+        "мастерских, орнаментах и технике изготовления, если в них нет ничего поразительного. "
+        "Не склеивай факты из разных фрагментов и не добавляй «а ещё». "
+        "Бери факт строго из фрагментов, ничего не выдумывай.\n"
+        "Ответ будет озвучен вслух, поэтому:\n"
+        "- начни с короткого интригующего зачина и меняй его: «А вы знали, что…», "
+        "«Представьте себе:», «Мало кто знает, но…», «Удивительно, но…»;\n"
+        "- никакой разметки, кавычек, ссылок, фамилий, инициалов и сокращений;\n"
+        "- века и числа словами в нужном падеже;\n"
+        "- одно-два предложения, не более 250 символов всего;\n"
+        "- с азартом, как рассказчик, который сам поражён этим фактом."
+    )
+    prompt = (
+        f"{instr}\n\n"
+        f"Просьба слушателя:\n{question}\n\n"
+        "Фрагменты:\n" + "\n---\n".join(contexts) + "\n\nФакт:"
+    )
+    try:
+        resp = llm.invoke(prompt)
+    except Exception as e:
+        logger.error("[fact] LLM error: %s", e, exc_info=1)
+        return "Упс! Что-то пошло не так! Попробуй еще!"
+    text = getattr(resp, "content", None)
+    if isinstance(text, list):
+        text = "".join(p.get("text", "") for p in text if isinstance(p, dict))
+    if not isinstance(text, str):
+        text = getattr(resp, "text", "") or str(resp)
+    text = (text or "").strip()
+    return text if text else "Упс! Что-то пошло не так! Попробуй еще!"
+
+
+# --- Факты из отобранной коллекции ---
+from collections import deque
+
+FACTS_COLLECTION = os.getenv("FACTS_COLLECTION", "facts")
+FACT_MIN_SCORE = float(os.getenv("FACT_MIN_SCORE", "0.3"))
+_FACT_OPENERS = [
+    "А вот удивительный факт!",
+    "Мало кто об этом знает.",
+    "Представьте себе!",
+    "Готовы удивиться?",
+    "Вот история, в которую трудно поверить.",
+    "Слушайте, это чистая правда.",
+]
+_NO_TOPIC_OPENER = "Про это у меня пока ничего нет, зато вот другое!"
+_recent_facts = deque(maxlen=5)
+_recent_openers = deque(maxlen=2)
+
+
+def _pick_fact(cands):
+    fresh = [c for c in cands if c[0] not in _recent_facts]
+    fid, text = random.choice(fresh or cands)
+    _recent_facts.append(fid)
+    return text
+
+
+def _pick_opener():
+    o = random.choice([x for x in _FACT_OPENERS if x not in _recent_openers])
+    _recent_openers.append(o)
+    return o
+
+
+def _topic_stems(topic: str):
+    return [w[:max(3, len(w) - 2)] for w in topic.replace("ё", "е").split() if len(w) >= 3]
+
+
+def answer_fact(question: str) -> str:
+    topic = _fact_topic(question)
+    try:
+        pts, _ = qdrant.scroll(collection_name=FACTS_COLLECTION, limit=1000,
+                               with_payload=True, with_vectors=False)
+        all_facts = [(p.id, p.payload["fact"]) for p in pts if (p.payload or {}).get("fact")]
+        if not all_facts:
+            raise RuntimeError("facts collection is empty")
+        opener, cands, how = None, all_facts, "random"
+        if topic:
+            stems = _topic_stems(topic)
+            cands = [c for c in all_facts
+                     if any(re.search(r"(?<![а-яa-z])" + re.escape(st), c[1].lower().replace("ё", "е"))
+                            for st in stems)]
+            how = f"words {stems}"
+            if not cands:
+                res = qdrant.query_points(collection_name=FACTS_COLLECTION,
+                                          query=embeddings.embed_query(topic), limit=3,
+                                          score_threshold=FACT_MIN_SCORE, with_payload=True)
+                cands = [(p.id, p.payload["fact"]) for p in res.points if (p.payload or {}).get("fact")]
+                how = f"vector {[round(p.score, 2) for p in res.points]}"
+            if not cands:
+                opener, cands, how = _NO_TOPIC_OPENER, all_facts, "no match"
+        fact_log.info("[fact] topic=%r %s candidates=%d", topic, how, len(cands))
+        return f"{opener or _pick_opener()} {_pick_fact(cands)}"
+    except Exception as e:
+        fact_log.warning("[fact] facts collection failed (%s), fallback to LLM", e)
+        return _answer_fact_llm(question)

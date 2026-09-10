@@ -18,3 +18,9 @@ qdrant_query.json
 disk_chunks.txt
 missing_files.txt
 payload_fnames.txt
+tokens.txt
+*.bak
+*.bak[0-9]*
+*.bak_*
+facts_done*.txt
+herodotus4.html
