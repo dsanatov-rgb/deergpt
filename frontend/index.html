@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Голосовой сервис DeerGPT</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Aptos&display=swap" rel="stylesheet">
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #fff;
+      font-family: "Apple Chancery", cursive, serif;
+      box-sizing: border-box;
+    }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .deer-container {
+      width: 3cm;
+      height: 4cm;
+      margin-top: 1cm;
+      margin-bottom: 1.2cm;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .deer-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+    .prompt-text {
+      color: #ffd700;
+      font-size: 20pt;
+      font-family: 'Aptos', sans-serif;
+      font-weight: normal;
+      text-align: center;
+      margin-bottom: 0.15cm;
+      text-shadow: 0 1px 8px #7b5e3b;
+      position: relative;
+      z-index: 2;
+      animation: text-glow 2s infinite alternate;
+    }
+    @keyframes text-glow {
+      0% { text-shadow: 0 1px 8px #7b5e3b, 0 0 8px #ffd70044; }
+      100% { text-shadow: 0 1px 14px #ffd700cc, 0 0 12px #ffd70088; }
+    }
+
+    .down-arrow {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 0.15cm;
+      height: 18px;
+    }
+
+    .mic-btn-container {
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      margin-bottom: 1.2cm;
+    }
+    .mic-btn-row { display: flex; flex-direction: row; align-items: center; gap: 18px; }
+
+    .mic-btn {
+      width: 1cm; height: 1cm;
+      background: linear-gradient(135deg, #ffd700 60%, #b8860b 100%);
+      border: none; border-radius: 50%;
+      box-shadow: 0 0 16px 2px #ffd70080, 0 0 2px 1px #b8860b;
+      display: flex; justify-content: center; align-items: center;
+      cursor: pointer; transition: box-shadow 0.3s; position: relative;
+      animation: shine 2s infinite linear;
+    }
+    .mic-btn:active { box-shadow: 0 0 24px 6px #ffd700cc; }
+    @keyframes shine {
+      0% { box-shadow: 0 0 16px 2px #ffd70080, 0 0 2px 1px #b8860b; }
+      50% { box-shadow: 0 0 32px 8px #ffd700cc, 0 0 2px 1px #b8860b; }
+      100% { box-shadow: 0 0 16px 2px #ffd70080, 0 0 2px 1px #b8860b; }
+    }
+    .mic-icon { width: 0.6cm; height: 0.6cm; fill: #fffbe5; filter: drop-shadow(0 0 2px #b8860b); }
+
+    .press-text { color: #fff; font-size: 13pt; font-family: 'Aptos', sans-serif; text-align: center; margin-top: 0.08cm; user-select: none; }
+    .voice-text { color: #ffd700; font-size: 15pt; font-family: 'Aptos', sans-serif; text-align: center; margin-top: 0.2cm; min-height: 1.3em; word-break: break-word; margin-bottom: 0.6em; }
+
+    .footer {
+      width: 100%;
+      text-align: center;
+      margin-bottom: 0.5cm;
+      display: flex;            /* добавлено: выравнивание подписи и иконки в ряд */
+      align-items: center;
+      justify-content: center;
+      gap: 10px;                /* расстояние между текстом и иконкой */
+    }
+    .footer-link { color: #fff; font-size: 13pt; font-family: "Apple Chancery", cursive, serif; text-decoration: none; opacity: 0.8; transition: opacity 0.2s; }
+    .footer-link:hover { opacity: 1; text-decoration: underline; }
+    
+    /* общий стиль иконок соцсетей */
+    .social-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;           /* как у Instagram */
+      height: 22px;
+      color: #fff;
+      opacity: 0.8;
+      transition: opacity 0.2s, transform 0.2s;
+      text-decoration: none;
+    }
+    .social-link:hover { opacity: 1; transform: translateY(-1px); }
+
+
+    /* иконка Instagram */
+    .insta-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      color: #fff;              /* текущий цвет для SVG */
+      opacity: 0.8;
+      transition: opacity 0.2s, transform 0.2s;
+      text-decoration: none;
+    }
+    .insta-link:hover { opacity: 1; transform: translateY(-1px); }
+    .insta-icon { width: 100%; height: 100%; display: block; }
+
+    .play-answer-row {
+      display: flex; flex-direction: column; align-items: center;
+      margin-top: 12px; margin-bottom: 8px; gap: 10px; justify-content: center;
+    }
+    .play-top {
+      display: flex; flex-direction: row; align-items: center; gap: 14px; justify-content: center;
+    }
+
+    .play-answer-btn {
+      width: 1cm; height: 1cm; min-width: 1cm; min-height: 1cm;
+      background: linear-gradient(135deg, #ffd700 60%, #b8860b 100%);
+      border: none; border-radius: 18px;
+      box-shadow: 0 0 16px 2px #ffd70080, 0 0 2px 1px #b8860b;
+      display: flex; justify-content: center; align-items: center;
+      cursor: pointer; padding: 0; transition: background 0.2s, opacity 0.2s;
+      opacity: 0.5; outline: none; position: relative;
+    }
+    .play-answer-btn.active {
+      opacity: 1; box-shadow: 0 0 24px 6px #ffd700cc;
+      background: linear-gradient(135deg, #ffd700 65%, #b8860b 100%);
+    }
+    .play-icon { display: block; width: 28px; height: 28px; }
+
+    .play-hint { color: #ffd700; font-size: 13pt; font-family: 'Aptos', sans-serif; text-align: center; letter-spacing: 0.01em; text-transform: lowercase; margin-left: 8px; margin-right: 0; user-select: none; }
+
+    .answer-timer {
+      display: inline-block;
+      background: transparent;
+      color: #fff;
+      font-family: 'Aptos', sans-serif;
+      font-size: 13pt;
+      border-radius: 7px;
+      padding: 0.05em 0.55em;
+      margin-left: 10px;
+      min-width: 38px;
+      text-align: center;
+      border: 1px solid transparent;
+      height: 30px; line-height: 30px;
+      user-select: none; transition: opacity 0.18s;
+    }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    .blinking { animation: blink 0.8s infinite linear; }
+
+    .password-overlay {
+      position: fixed; inset: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(255,255,255,0.2);
+      z-index: 7000; display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(1.5px);
+    }
+    .password-circle {
+      background: rgba(255,255,255,0.88);
+      border-radius: 50%; width: 320px; height: 320px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      box-shadow: 0 0 40px 8px #fff8; position: relative;
+    }
+    .password-input-wrap { position: relative; display: flex; align-items: center; justify-content: center; }
+    .password-input {
+      width: 180px; padding: 10px 40px 10px 16px;
+      font-size: 15pt; font-family: 'Aptos', sans-serif;
+      border: 2px solid #bbb; border-radius: 18px; outline: none; margin-bottom: 8px;
+      transition: border 0.2s; background: #fff; text-align: center; color: #222;
+    }
+    .password-input.error { border: 2px solid #e53935; background: #fff5f5; color: #e53935; }
+    .password-label { font-family: 'Aptos', sans-serif; font-size: 10pt; color: #444; margin-top: 0; user-select: none; letter-spacing: 0.02em; }
+    .toggle-eye {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      width: 22px; height: 22px; cursor: pointer; color: #666; opacity: 0.9;
+      display: flex; align-items: center; justify-content: center; border: none; background: transparent; padding: 0;
+    }
+    .toggle-eye svg { width: 22px; height: 22px; }
+    .toggle-eye:hover { color: #333; }
+
+    #vizWrap { display:none; }
+    #waveCanvas { display:block; width:320px; height:36px; }
+    #progressBar {
+      position:relative; width:320px; height:6px;
+      background:rgba(255,255,255,0.15); border-radius:3px; margin-top:6px; cursor:pointer;
+    }
+    #progressFill {
+      position:absolute; left:0; top:0; height:100%; width:0%;
+      background:#ffd700; border-radius:3px;
+    }
+
+    @media (max-width: 400px) {
+      .password-circle { width: 90vw; height: 90vw; min-width: 200px; min-height: 200px; }
+      .password-input { width: 60vw; min-width: 110px; }
+      #waveCanvas { width: 80vw; } #progressBar { width: 80vw; }
+    }
+    @media (max-width: 480px) {
+      .deer-container { margin-top: 1.2cm; margin-bottom: 0.8cm; }
+      .mic-btn-container { margin-bottom: 1cm; }
+      .prompt-text { font-size: 16pt; }
+      .voice-text { font-size: 13pt; }
+      .footer-link { font-size: 11pt; }
+      .play-hint { font-size: 11pt; }
+      .answer-timer { font-size: 11pt; min-width: 24px; }
+    }
+  </style>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png">
+  <meta name="theme-color" content="#000000">
+</head>
+<body>
+  <!-- Оверлей пароля -->
+  <div class="password-overlay" id="passwordOverlay">
+    <div class="password-circle">
+      <div class="password-input-wrap">
+        <input type="password" id="passwordInput" class="password-input" placeholder="Введите пароль" autocomplete="off" />
+        <button id="toggleEye" class="toggle-eye" aria-label="Показать/скрыть пароль" type="button" title="Показать/скрыть пароль">
+          <svg id="eyeOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+            <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          <svg id="eyeClosed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="display:none">
+            <path d="M3.98 8.223A10.48 10.48 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395"/>
+            <path d="M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774"/>
+            <path d="M9.879 9.879a3 3 0 104.242 4.242"/>
+            <path d="M3 3l18 18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="password-label">пароль</div>
+    </div>
+  </div>
+
+  <!-- Основной контент -->
+  <div class="deer-container">
+    <img src="deer.png" alt="Золотой олень" class="deer-img">
+  </div>
+  <div class="prompt-text">Узнай о зверином стиле скифов</div>
+  <div class="down-arrow">
+    <svg width="18" height="18" viewBox="0 0 18 18">
+      <polyline points="3,7 9,13 15,7" fill="none" stroke="white" stroke-width="2"/>
+    </svg>
+  </div>
+
+  <div class="mic-btn-container">
+    <div class="mic-btn-row">
+      <button class="mic-btn" id="micBtn" title="Голосовой запрос">
+        <svg class="mic-icon" viewBox="0 0 24 24">
+          <ellipse cx="12" cy="10" rx="4" ry="6"/>
+          <rect x="10" y="16" width="4" height="4" rx="1"/>
+          <rect x="8" y="20" width="8" height="2" rx="1"/>
+        </svg>
+      </button>
+    </div>
+    <div class="press-text">нажми и спроси / останови</div>
+    <div id="voice-text" class="voice-text"></div>
+
+    <div class="play-answer-row">
+      <div class="play-top">
+        <button class="play-answer-btn" id="playAnswerBtn" title="Прослушать ответ ИИ" disabled>
+          <svg class="play-icon" viewBox="0 0 50 50">
+            <polygon points="14,8 41,25 14,42" fill="#fff"/>
+          </svg>
+        </button>
+        <span id="playHint" class="play-hint" style="display:none;">нажми для ответа</span>
+        <span id="answerTimer" class="answer-timer" style="display:none;">30</span>
+      </div>
+
+      <!-- Визуализация и прогресс -->
+      <div id="vizWrap">
+        <canvas id="waveCanvas" width="320" height="36"></canvas>
+        <div id="progressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div id="progressFill"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a class="footer-link" href="https://sanatov-art.ru" target="_blank" rel="noopener">Sanatov-Art</a>
+    <a class="insta-link" href="https://www.instagram.com/deergpt/" target="_blank" rel="noopener" aria-label="Instagram: @deergpt">
+      <svg class="insta-icon" viewBox="0 0 448 512" aria-hidden="true" focusable="false">
+        <path fill="currentColor" d="M224 202.7A53.3 53.3 0 1 0 277.3 256 53.38 53.38 0 0 0 224 202.7zm124.7-41.4a31.1 31.1 0 1 0-31.1-31.1 31.1 31.1 0 0 0 31.1 31.1zM448 144v224a80.09 80.09 0 0 1-80 80H80a80.09 80.09 0 0 1-80-80V144a80.09 80.09 0 0 1 80-80h288a80.09 80.09 0 0 1 80 80zM224 160a96 96 0 1 0 96 96 96.11 96.11 0 0 0-96-96zM400 96H352a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h48a16 16 0 0 0 16-16V112a16 16 0 0 0-16-16z"/>
+      </svg>
+    </a>
+    <a class="social-link" href="https://vkvideo.ru/@club233350752" target="_blank" rel="noopener" aria-label="VK Видео: @club233350752">
+    <img src="footerrr.png" alt="VK Видео" style="width:100%;height:100%;display:block;object-fit:contain;">
+    </a>
+  </div>
+
+  <script>
+    // ===== Пароль: глаз =====
+    const overlay = document.getElementById('passwordOverlay');
+    const input = document.getElementById('passwordInput');
+    const toggleEyeBtn = document.getElementById('toggleEye');
+    const eyeOpen = document.getElementById('eyeOpen');
+    const eyeClosed = document.getElementById('eyeClosed');
+
+    window.onload = () => { input.focus(); };
+
+    toggleEyeBtn.addEventListener('click', () => {
+      const isPassword = input.getAttribute('type') === 'password';
+      input.setAttribute('type', isPassword ? 'text' : 'password');
+      eyeOpen.style.display = isPassword ? 'none' : 'block';
+      eyeClosed.style.display = isPassword ? 'block' : 'none';
+    });
+
+    input.addEventListener('keydown', async function(e) {
+      if (e.key === "Enter") {
+        const val = input.value.trim();
+        if (!val) return;
+        try {
+          const resp = await fetch("/api/auth", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: val })
+          });
+          const data = await resp.json();
+          if (data && data.ok) {
+            overlay.style.display = "none";
+            input.value = "";
+            input.classList.remove('error');
+          } else {
+            input.classList.add('error');
+            setTimeout(() => input.classList.remove('error'), 1200);
+            input.value = "";
+          }
+        } catch {
+          input.classList.add('error');
+          setTimeout(() => input.classList.remove('error'), 1200);
+          input.value = "";
+        }
+      }
+    });
+
+    // ===== Голос / плеер / визуализация =====
+    const micBtn = document.getElementById('micBtn');
+    const playAnswerBtn = document.getElementById('playAnswerBtn');
+    const playHint = document.getElementById('playHint');
+    const answerTimer = document.getElementById('answerTimer');
+    const voiceTextDiv = document.getElementById('voice-text');
+
+    const vizWrap = document.getElementById('vizWrap');
+    const waveCanvas = document.getElementById('waveCanvas');
+    const progressBar = document.getElementById('progressBar');
+    const progressFill = document.getElementById('progressFill');
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let isPlaying = false;
+    let currentAudioBlob = null;
+    let currentAudioUrl = null;
+    let stopTimeout = null;
+    let answerTimerInterval = null;
+    let answerDotsInterval = null;
+    let recognition = null;
+
+    // Плеер и Web Audio
+    let audioEl = null;
+    let audioCtx = null;
+    let analyser = null;
+    let rafId = null;
+    let dataArray = null;
+    let bufferLength = 0;
+
+    // === Добавлено: детектор платформы / SR (минимально) ===
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const hasSR = !!SR;
+    // ===============================================
+
+    function preparePlayer(url) {
+      if (audioEl) { try { audioEl.pause(); } catch(e) {} audioEl.src = ''; }
+      audioEl = new Audio(url);
+
+      if (!audioCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new Ctx();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        bufferLength = analyser.fftSize;
+        dataArray = new Uint8Array(bufferLength);
+      }
+
+      const srcNode = audioCtx.createMediaElementSource(audioEl);
+      srcNode.connect(analyser);
+      analyser.connect(audioCtx.destination);
+
+      vizWrap.style.display = 'block';
+      progressFill.style.width = '0%';
+
+      audioEl.addEventListener('timeupdate', () => {
+        if (!isFinite(audioEl.duration) || audioEl.duration <= 0) return;
+        const pct = (audioEl.currentTime / audioEl.duration) * 100;
+        progressFill.style.width = `${pct}%`;
+        progressBar.setAttribute('aria-valuenow', Math.round(pct));
+      });
+
+      audioEl.addEventListener('ended', () => {
+        cancelAnimationFrame(rafId);
+        playAnswerBtn.classList.remove("active");
+        playAnswerBtn.style.opacity = 0.5;
+      });
+
+      if (!progressBar._seekBound) {
+        progressBar.addEventListener('click', (e) => {
+          if (!audioEl || !isFinite(audioEl.duration) || audioEl.duration <= 0) return;
+          const rect = progressBar.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const pct = Math.min(Math.max(x / rect.width, 0), 1);
+          audioEl.currentTime = pct * audioEl.duration;
+        });
+        progressBar._seekBound = true;
+      }
+
+      const ctx = waveCanvas.getContext('2d');
+
+      function drawWave() {
+        rafId = requestAnimationFrame(drawWave);
+        analyser.getByteTimeDomainData(dataArray);
+
+        ctx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#ffd700';
+        ctx.beginPath();
+
+        const sliceWidth = waveCanvas.width / bufferLength;
+        let x = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const v = dataArray[i] / 128.0;
+          const y = (v * waveCanvas.height) / 2;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+          x += sliceWidth;
+        }
+        ctx.stroke();
+      }
+
+      audioEl.addEventListener('play', () => {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        cancelAnimationFrame(rafId);
+        drawWave();
+      });
+      audioEl.addEventListener('pause', () => { cancelAnimationFrame(rafId); });
+    }
+
+    function resetAnswerButton() {
+      playAnswerBtn.disabled = true;
+      playAnswerBtn.classList.remove("active");
+      playAnswerBtn.style.opacity = 0.5;
+      playHint.style.display = "none";
+      isPlaying = false;
+    }
+
+    // === МИНИМАЛЬНАЯ ПРАВКА: платформенная ветка в обработчике микрофона ===
+    micBtn.addEventListener('click', async function handler() {
+      if (isPlaying && audioEl) {
+        audioEl.pause();
+        isPlaying = false;
+        micBtn.style.opacity = 1;
+        return;
+      }
+
+      // ANDROID ВЕТКА: без параллельного SpeechRecognition, текст после записи
+      if (isAndroid) {
+        if (!isRecording) {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Ваш браузер не поддерживает запись звука (getUserMedia). Используйте Chrome, Edge или мобильные версии.");
+            return;
+          }
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            audioChunks = [];
+            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+
+            mediaRecorder.onstart = () => {
+              isRecording = true;
+              micBtn.style.opacity = 0.5;
+              voiceTextDiv.textContent = "Слушаю и отрабатываю запрос";
+              resetAnswerButton();
+
+              // На Android намеренно НЕ запускаем SpeechRecognition в параллель
+              // Ограничение записи 7 секунд (7000 мс)
+              if (stopTimeout) clearTimeout(stopTimeout);
+              stopTimeout = setTimeout(() => {
+                if (mediaRecorder && isRecording) mediaRecorder.stop();
+              }, 7000);
+            };
+
+            mediaRecorder.onstop = async () => {
+              isRecording = false;
+              stream.getTracks().forEach(track => track.stop());
+              if (stopTimeout) clearTimeout(stopTimeout);
+              micBtn.style.opacity = 1;
+
+              // Таймер ожидания ответа: как было
+              if (answerTimerInterval) clearInterval(answerTimerInterval);
+              if (answerDotsInterval) clearInterval(answerDotsInterval);
+              answerTimer.classList.remove('blinking');
+
+              let seconds = 30;
+              answerTimer.textContent = seconds;
+              answerTimer.style.display = "inline-block";
+
+              const waitingDots = ["...", "", "..", ".", ""];
+              let dotsIndex = 0;
+
+              function startDotsBlinking() {
+                answerTimer.textContent = "...";
+                answerTimer.classList.add('blinking');
+                answerDotsInterval = setInterval(() => {
+                  dotsIndex = (dotsIndex + 1) % waitingDots.length;
+                  answerTimer.textContent = waitingDots[dotsIndex];
+                }, 480);
+              }
+
+              answerTimerInterval = setInterval(() => {
+                seconds -= 1;
+                if (seconds >= 0) answerTimer.textContent = seconds;
+                if (seconds === 0) { clearInterval(answerTimerInterval); startDotsBlinking(); }
+              }, 1000);
+
+              const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+              const formData = new FormData();
+              formData.append("file", audioBlob, "voice_input.webm");
+
+              try {
+                const response = await fetch("/api/voice", { method: "POST", body: formData });
+                if (!response.ok) throw new Error("Ошибка сервера");
+                // Ожидаем, что сервер вернёт аудио-ответ; если сервер может вернуть и текст — здесь можно подставить транскрипцию
+                currentAudioBlob = await response.blob();
+                currentAudioUrl = URL.createObjectURL(currentAudioBlob);
+
+                // Подготовить плеер/визуализацию
+                preparePlayer(currentAudioUrl);
+
+                // Активировать управление прослушиванием
+                playAnswerBtn.disabled = false;
+                playAnswerBtn.classList.add("active");
+                playAnswerBtn.style.opacity = 1;
+                playHint.style.display = "block";
+
+                // Показать текст после записи: если есть серверная транскрипция, подставьте её сюда
+                // По умолчанию оставим "Готово" для визуальной обратной связи
+                voiceTextDiv.textContent = "Готово";
+              } catch (err) {
+                voiceTextDiv.textContent = "Ошибка: " + err.message;
+                isPlaying = false;
+                micBtn.style.opacity = 1;
+                resetAnswerButton();
+              } finally {
+                if (answerTimerInterval) clearInterval(answerTimerInterval);
+                if (answerDotsInterval) clearInterval(answerDotsInterval);
+                answerTimer.classList.remove('blinking');
+                answerTimer.style.display = "none";
+                answerTimer.textContent = "";
+              }
+            };
+
+            mediaRecorder.start();
+          } catch (err) {
+            voiceTextDiv.textContent = "Ошибка доступа к микрофону";
+          }
+        } else {
+          if (mediaRecorder && isRecording) {
+            mediaRecorder.stop();
+          }
+        }
+        return;
+      }
+
+      // ДРУГИЕ ПЛАТФОРМЫ (iOS/macOS/desktop) — ИСХОДНАЯ ЛОГИКА
+      if (isPlaying && audioEl) {
+        audioEl.pause();
+        isPlaying = false;
+        micBtn.style.opacity = 1;
+        return;
+      }
+      if (!isRecording) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert("Ваш браузер не поддерживает запись звука (getUserMedia). Используйте Chrome, Edge или мобильные версии.");
+          return;
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+          audioChunks = [];
+          mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+
+          mediaRecorder.onstart = () => {
+            isRecording = true;
+            micBtn.style.opacity = 0.5;
+            voiceTextDiv.textContent = "Говорите...";
+            resetAnswerButton();
+
+            // Распознавание речи (если доступно) — оставляем как было
+            if (hasSR) {
+              recognition = new SR();
+              recognition.lang = "ru-RU";
+              recognition.interimResults = true;
+              recognition.continuous = false;
+              recognition.onresult = function(event) {
+                let finalText = "";
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                  finalText += event.results[i][0].transcript;
+                }
+                voiceTextDiv.textContent = finalText;
+              };
+              recognition.onerror = function(event) { voiceTextDiv.textContent = "Ошибка распознавания: " + event.error; };
+              recognition.onend = function() {
+                if (voiceTextDiv.textContent === "Говорите...") {
+                  voiceTextDiv.textContent = "Обрабатываю…";
+                }
+              };
+              recognition.start();
+            }
+
+            // Ограничение записи 7 секунд
+            if (stopTimeout) clearTimeout(stopTimeout);
+            stopTimeout = setTimeout(() => {
+              if (mediaRecorder && isRecording) mediaRecorder.stop();
+              if (recognition) recognition.stop();
+            }, 7000);
+          };
+
+          mediaRecorder.onstop = async () => {
+            isRecording = false;
+            stream.getTracks().forEach(track => track.stop());
+            if (stopTimeout) clearTimeout(stopTimeout);
+            if (recognition) recognition.stop();
+            micBtn.style.opacity = 1;
+
+            // Прозрачный таймер ожидания ответа: 30 -> ...
+            if (answerTimerInterval) clearInterval(answerTimerInterval);
+            if (answerDotsInterval) clearInterval(answerDotsInterval);
+            answerTimer.classList.remove('blinking');
+
+            let seconds = 30;
+            answerTimer.textContent = seconds;
+            answerTimer.style.display = "inline-block";
+
+            const waitingDots = ["...", "", "..", ".", ""];
+            let dotsIndex = 0;
+
+            function startDotsBlinking() {
+              answerTimer.textContent = "...";
+              answerTimer.classList.add('blinking');
+              answerDotsInterval = setInterval(() => {
+                dotsIndex = (dotsIndex + 1) % waitingDots.length;
+                answerTimer.textContent = waitingDots[dotsIndex];
+              }, 480);
+            }
+
+            answerTimerInterval = setInterval(() => {
+              seconds -= 1;
+              if (seconds >= 0) answerTimer.textContent = seconds;
+              if (seconds === 0) { clearInterval(answerTimerInterval); startDotsBlinking(); }
+            }, 1000);
+
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append("file", audioBlob, "voice_input.webm");
+
+            try {
+              const response = await fetch("/api/voice", { method: "POST", body: formData });
+              if (!response.ok) throw new Error("Ошибка сервера");
+              currentAudioBlob = await response.blob();
+              currentAudioUrl = URL.createObjectURL(currentAudioBlob);
+
+              // Подготовить плеер/визуализацию
+              preparePlayer(currentAudioUrl);
+
+              // Активировать управление прослушиванием
+              playAnswerBtn.disabled = false;
+              playAnswerBtn.classList.add("active");
+              playAnswerBtn.style.opacity = 1;
+              playHint.style.display = "block";
+            } catch (err) {
+              voiceTextDiv.textContent = "Ошибка: " + err.message;
+              isPlaying = false;
+              micBtn.style.opacity = 1;
+              resetAnswerButton();
+            } finally {
+              if (answerTimerInterval) clearInterval(answerTimerInterval);
+              if (answerDotsInterval) clearInterval(answerDotsInterval);
+              answerTimer.classList.remove('blinking');
+              answerTimer.style.display = "none";
+              answerTimer.textContent = "";
+            }
+          };
+
+          mediaRecorder.start();
+        } catch (err) {
+          voiceTextDiv.textContent = "Ошибка доступа к микрофону";
+        }
+      } else {
+        if (mediaRecorder && isRecording) {
+          mediaRecorder.stop();
+          if (recognition) recognition.stop();
+        }
+      }
+    });
+    // === конец платформенной правки ===
+
+    // Обработчик Play: воспроизводит audioEl и запускает визуализацию
+    function setPlayIcon(playing) {
+      playAnswerBtn.innerHTML = playing
+        ? '<svg viewBox="0 0 24 24" width="34" height="34" fill="#fff"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
+        : '<svg viewBox="0 0 24 24" width="34" height="34" fill="#fff"><path d="M8 5v14l11-7z"/></svg>';
+      playAnswerBtn.setAttribute('aria-label', playing ? 'Остановить' : 'Воспроизвести');
+    }
+
+    playAnswerBtn.addEventListener('click', function() {
+      if (!currentAudioUrl) return;
+      if (audioEl && isPlaying) {
+        audioEl.pause();
+        return;
+      }
+      if (!audioEl || audioEl.src !== currentAudioUrl) {
+        preparePlayer(currentAudioUrl);
+      }
+      audioEl.addEventListener('play', () => { isPlaying = true; setPlayIcon(true); });
+      audioEl.addEventListener('pause', () => { isPlaying = false; setPlayIcon(false); });
+      audioEl.addEventListener('ended', () => { isPlaying = false; setPlayIcon(false); });
+      audioEl.play().then(() => {
+        playAnswerBtn.classList.add("active");
+        playAnswerBtn.style.opacity = 1;
+        playHint.style.display = "none";
+      }).catch(() => {});
+    });
+  </script>
+</body>
+</html>
