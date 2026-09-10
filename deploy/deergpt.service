@@ -1,0 +1,16 @@
+[Unit]
+Description=DeerGPT FastAPI backend
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=user1
+WorkingDirectory=/home/user1/rag2_project
+EnvironmentFile=/home/user1/rag2_project/.env
+ExecStart=/home/user1/rag2_project/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
