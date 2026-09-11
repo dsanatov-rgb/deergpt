@@ -76,23 +76,41 @@ ROMAN = {
     "XVI": "шестнадцатого", "XVII": "семнадцатого", "XVIII": "восемнадцатого",
     "XIX": "девятнадцатого", "XX": "двадцатого", "XXI": "двадцать первого",
 }
+_ORD_NOM = {"второго": "второй", "третьего": "третий", "шестого": "шестой",
+            "седьмого": "седьмой", "восьмого": "восьмой"}
+_CENTURY_NOUN = {"nom": ("век", "века"), "gen": ("века", "веков"), "prep": ("веке", "веках")}
+_CENTURY_RE = re.compile(
+    r"(?:\b([Вв]о?)\s+)?\b([IVXLC]{1,6})(?:\s*[-–—]\s*([IVXLC]{1,6}))?"
+    r"\s*(вв\.|в\.|веках|веков|века|веке|век)(?![а-яё])"
+)
 
 
-def _roman(match):
-    return ROMAN.get(match.group(1).upper(), match.group(1)) + " " + match.group(2)
+def _ordinal(roman: str, case: str) -> str:
+    """Порядковое числительное к римскому веку: gen — седьмого, prep — седьмом, nom — седьмой."""
+    gen = ROMAN.get(roman)
+    if gen is None:
+        return roman
+    if case == "gen":
+        return gen
+    if case == "prep":
+        return gen[:-3] + ("ем" if gen.endswith("его") else "ом")
+    last = gen.split()[-1]
+    return gen[: len(gen) - len(last)] + _ORD_NOM.get(last, last[:-3] + "ый")
 
-ROMAN = {
-    "I": "первого", "II": "второго", "III": "третьего", "IV": "четвёртого",
-    "V": "пятого", "VI": "шестого", "VII": "седьмого", "VIII": "восьмого",
-    "IX": "девятого", "X": "десятого", "XI": "одиннадцатого", "XII": "двенадцатого",
-    "XIII": "тринадцатого", "XIV": "четырнадцатого", "XV": "пятнадцатого",
-    "XVI": "шестнадцатого", "XVII": "семнадцатого", "XVIII": "восемнадцатого",
-    "XIX": "девятнадцатого", "XX": "двадцатого", "XXI": "двадцать первого",
-}
 
-def _roman(m):
-    word = ROMAN.get(m.group(1).upper(), m.group(1))
-    return word + " век"
+def _century(m) -> str:
+    """VII в. -> седьмого века; в VII в. -> в седьмом веке; VII–VI вв. -> седьмого-шестого веков."""
+    prep, r1, r2, unit = m.group(1), m.group(2), m.group(3), m.group(4)
+    plural = r2 is not None or unit in ("вв.", "веков", "веках")
+    if unit == "век":
+        case = "nom"
+    elif unit in ("веке", "веках") or (prep and unit in ("в.", "вв.")):
+        case = "prep"
+    else:
+        case = "gen"
+    words = _ordinal(r1, case) + ("-" + _ordinal(r2, case) if r2 else "")
+    return (prep + " " if prep else "") + words + " " + _CENTURY_NOUN[case][plural]
+
 
 ABBR = [
     (r"\bдо\s+н\.?\s?э\.?", "до нашей эры"),
@@ -124,7 +142,7 @@ def _sanitize_tts(text: str) -> str:
     text = re.sub(r"\b[А-ЯЁA-Z]\.\s?(?=[А-ЯЁA-Z]\.|\s?[А-ЯЁA-Z][а-яёa-z])", "", text)
 
     # сокращения
-    text = re.sub(r"\b([IVXLC]{1,6})\s*(?:вв?\.|век[а-я]*)", _roman, text)
+    text = _CENTURY_RE.sub(_century, text)
     for pattern, repl in ABBR:
         text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
 
