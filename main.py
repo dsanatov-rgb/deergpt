@@ -244,7 +244,7 @@ async def auth(request: Request):
 
 
 @app.post("/voice")
-async def voice(request: Request, file: UploadFile = File(...)):
+def voice(request: Request, file: UploadFile = File(...)):
     token = _cookie_token(request)
     if token is None:
         raise HTTPException(status_code=401, detail="unauthorized")
