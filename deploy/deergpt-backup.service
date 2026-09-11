@@ -1,0 +1,7 @@
+[Unit]
+Description=DeerGPT: nightly backup of activity.db
+
+[Service]
+Type=oneshot
+User=user1
+ExecStart=/home/user1/rag2_project/deploy/backup_activity.sh
