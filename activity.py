@@ -3,6 +3,7 @@ import logging
 import os
 import sqlite3
 import threading
+import time
 from contextlib import closing
 from datetime import datetime, timezone
 
@@ -39,6 +40,15 @@ CREATE TABLE IF NOT EXISTS qa (
 CREATE INDEX IF NOT EXISTS idx_qa_token_ts ON qa(token, ts);
 CREATE INDEX IF NOT EXISTS idx_qa_ts ON qa(ts);
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+CREATE TABLE IF NOT EXISTS hits (
+    id    INTEGER PRIMARY KEY,
+    ts    TEXT NOT NULL,
+    ip    TEXT,
+    ua    TEXT,
+    ref   TEXT,
+    token TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_hits_ts ON hits(ts);
 """
 
 _QA_FIELDS = ("token", "ip", "mode", "question", "answer", "status",
@@ -125,3 +135,53 @@ def recent_qa(token=None, limit: int = 200) -> list:
 
 def recent_events(limit: int = 200) -> list:
     return _read("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))
+
+
+# --- Заходы на страницу ---
+HIT_MIN_INTERVAL = 10.0
+_hit_lock = threading.Lock()
+_last_hit = {}
+
+
+def log_hit(ip, ua=None, ref=None, token=None) -> bool:
+    """Заход на страницу; с одного IP не чаще раза в HIT_MIN_INTERVAL секунд."""
+    now = time.monotonic()
+    key = ip or "?"
+    with _hit_lock:
+        last = _last_hit.get(key)
+        if last is not None and now - last < HIT_MIN_INTERVAL:
+            return False
+        _last_hit[key] = now
+        if len(_last_hit) > 10000:
+            cutoff = now - HIT_MIN_INTERVAL
+            for k in [k for k, v in _last_hit.items() if v < cutoff]:
+                del _last_hit[k]
+    try:
+        _write("INSERT INTO hits (ts, ip, ua, ref, token) VALUES (?, ?, ?, ?, ?)",
+               (_now(), ip, (ua or "")[:200], (ref or "")[:300] or None, token))
+        return True
+    except Exception:
+        _log.exception("[activity] log_hit failed")
+        return False
+
+
+def hits_stats(offset_min: int = 0) -> dict:
+    """Статистика заходов; offset_min — сдвиг местного времени от UTC в минутах."""
+    mod = f"{int(offset_min):+d} minutes"
+    total = _read("""SELECT COUNT(*) AS n, COUNT(DISTINCT ip) AS ips,
+                            COALESCE(SUM(token IS NOT NULL), 0) AS with_token, MIN(ts) AS since
+                     FROM hits""")[0]
+    today = _read("""SELECT COUNT(*) AS n, COUNT(DISTINCT ip) AS ips,
+                            COALESCE(SUM(token IS NOT NULL), 0) AS with_token
+                     FROM hits WHERE date(ts, ?) = date('now', ?)""", (mod, mod))[0]
+    days = _read("""SELECT date(ts, ?) AS day, COUNT(*) AS n, COUNT(DISTINCT ip) AS ips
+                    FROM hits GROUP BY day ORDER BY day DESC LIMIT 14""", (mod,))
+    funnel = {"logins": 0, "questions": 0, "askers": 0}
+    if total["since"]:
+        s = total["since"]
+        funnel = _read("""SELECT
+            (SELECT COUNT(*) FROM events WHERE kind = 'auth_ok' AND ts >= ?) AS logins,
+            (SELECT COUNT(*) FROM qa WHERE ts >= ?) AS questions,
+            (SELECT COUNT(DISTINCT token) FROM qa WHERE ts >= ?) AS askers""", (s, s, s))[0]
+    return {"total": total, "today": today, "days": days, "funnel": funnel}
+

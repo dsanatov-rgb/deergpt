@@ -363,3 +363,27 @@ def admin_qa(request: Request, token: str = "", limit: int = 200):
 def admin_events(request: Request, limit: int = 200):
     _require_admin(request)
     return {"items": activity.recent_events(max(1, min(limit, 1000)))}
+
+
+# --- Счётчик заходов ---
+import json
+
+
+@app.post("/hit")
+async def hit(request: Request):
+    ref = None
+    try:
+        raw = await request.body()
+        if raw and len(raw) <= 2048:
+            ref = str(json.loads(raw).get("ref") or "")[:300] or None
+    except Exception:
+        pass
+    activity.log_hit(_client_ip(request), request.headers.get("user-agent"), ref, _cookie_token(request))
+    return Response(status_code=204)
+
+
+@app.get("/admin/hits")
+def admin_hits(request: Request, tz: int = 0):
+    _require_admin(request)
+    return activity.hits_stats(-max(-840, min(tz, 840)))
+

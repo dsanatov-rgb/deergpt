@@ -40,6 +40,8 @@ header h1{font:400 22px/1.2 var(--serif);margin:0;flex:1}
 #stats{margin:0;padding:14px 24px;color:var(--muted);font:17px/1.55 var(--serif)}
 #stats b{color:var(--parch);font-weight:600}
 #stats b.bad{color:var(--ochre)}
+#visits{margin:0;padding:0 24px 14px;color:var(--muted);font:17px/1.55 var(--serif)}
+#visits b{color:var(--parch);font-weight:600}
 
 main{display:grid;grid-template-columns:minmax(260px,330px) 1fr;border-top:1px solid var(--line)}
 section{padding:18px 24px;min-width:0}
@@ -81,7 +83,7 @@ td.bad{color:var(--ochre)}
   main{grid-template-columns:1fr}
   #tokens{border-right:0;border-bottom:1px solid var(--line)}
   #tok-list{max-height:40vh;overflow-y:auto}
-  header,#stats,section,details{padding-left:16px;padding-right:16px}
+  header,#stats,#visits,section,details{padding-left:16px;padding-right:16px}
 }
 </style>
 </head>
@@ -110,6 +112,7 @@ td.bad{color:var(--ochre)}
     </div>
   </header>
   <p id="stats"></p>
+  <p id="visits"></p>
   <main>
     <section id="tokens" aria-labelledby="tok-title">
       <h2 id="tok-title">Жетоны</h2>
@@ -132,6 +135,15 @@ td.bad{color:var(--ochre)}
       <div id="feed"></div>
     </section>
   </main>
+  <details id="days">
+    <summary>Заходы по дням<span id="days-count"></span></summary>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>День</th><th>Заходов</th><th>Разных адресов</th></tr></thead>
+        <tbody id="days-body"></tbody>
+      </table>
+    </div>
+  </details>
   <details id="events">
     <summary>Журнал входов<span id="ev-count"></span></summary>
     <div class="table-wrap">
@@ -146,7 +158,7 @@ td.bad{color:var(--ochre)}
 <script>
 (() => {
 const $ = s => document.querySelector(s);
-const state = {tokens: [], total: 0, qa: [], events: [], token: '', reveal: false, timer: null};
+const state = {tokens: [], total: 0, qa: [], events: [], hits: null, token: '', reveal: false, timer: null};
 const dayKey = d => d.toDateString();
 
 function el(tag, attrs, ...kids) {
@@ -212,8 +224,8 @@ async function start() {
 
 async function load() {
   try {
-    const [s, q, e] = await Promise.all([api('summary'), api('qa?limit=1000'), api('events?limit=300')]);
-    state.tokens = s.tokens; state.total = s.total_tokens; state.qa = q.items; state.events = e.items;
+    const [s, q, e, h] = await Promise.all([api('summary'), api('qa?limit=1000'), api('events?limit=300'), api('hits?tz=' + new Date().getTimezoneOffset())]);
+    state.tokens = s.tokens; state.total = s.total_tokens; state.qa = q.items; state.events = e.items; state.hits = h;
     render();
     $('#updated').textContent = 'Обновлено в ' + new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
   } catch (err) {
@@ -221,7 +233,7 @@ async function load() {
   }
 }
 
-function render() { renderStats(); renderTokens(); renderFeed(); renderEvents(); }
+function render() { renderStats(); renderVisits(); renderTokens(); renderFeed(); renderEvents(); }
 
 function renderStats() {
   const today = dayKey(new Date());
@@ -293,6 +305,32 @@ function renderFeed() {
   });
   if (items.length > 300) out.push(el('p', {class: 'empty'}, `Показаны последние 300 из ${items.length}. Уточните поиск, чтобы найти более ранние.`));
   feed.replaceChildren(...out);
+}
+
+function renderVisits() {
+  const h = state.hits, p = $('#visits');
+  if (!h || !h.total.n) {
+    p.replaceChildren('Заходов на сайт пока не было. Счётчик запущен: первые появятся, когда кто-нибудь откроет главную страницу.');
+    $('#days-body').replaceChildren(el('tr', null, el('td', {colspan: '3', class: 'empty'}, 'Данных пока нет.')));
+    $('#days-count').textContent = '';
+    return;
+  }
+  const b = v => el('b', null, v);
+  const t = h.today, a = h.total, f = h.funnel;
+  const raz = n => ' ' + plural(n, 'раз', 'раза', 'раз');
+  const adr = n => ' ' + plural(n, 'адреса', 'адресов', 'адресов');
+  const since = new Date(a.since).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'});
+  p.replaceChildren(
+    'Сайт открывали сегодня ', b(t.n), raz(t.n) + ' с ', b(t.ips), adr(t.ips),
+    ', всего ', b(a.n), raz(a.n) + ' с ', b(a.ips), adr(a.ips), ' начиная с ' + since + '. ',
+    'Из них посетители, уже входившие по жетону, — ', b(a.with_token), raz(a.with_token) + '. ',
+    'За это время ', b(f.logins), ' ' + plural(f.logins, 'вход', 'входа', 'входов') + ' по жетону и ',
+    b(f.questions), ' ' + plural(f.questions, 'вопрос', 'вопроса', 'вопросов') + ' от ',
+    b(f.askers), ' ' + plural(f.askers, 'посетителя', 'посетителей', 'посетителей') + '.');
+  $('#days-body').replaceChildren(...h.days.map(d => el('tr', null,
+    el('td', null, new Date(d.day + 'T00:00:00').toLocaleDateString('ru-RU', {weekday: 'short', day: 'numeric', month: 'long'})),
+    el('td', null, d.n), el('td', null, d.ips))));
+  $('#days-count').textContent = ` (${h.days.length})`;
 }
 
 const KIND = {
