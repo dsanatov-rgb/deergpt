@@ -13,10 +13,13 @@ from gtts import gTTS
 from openai import OpenAI
 
 from rag import answer_with_rag, answer_fact, is_fact_request
+import time
+import activity
 
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
+activity.init()
 
 # --- STT через proxyapi.ru (вместо локального Whisper) ---
 stt_client = OpenAI(
@@ -173,11 +176,29 @@ def _sign(token: str) -> str:
     return digest
 
 
-def _valid_cookie(request: Request) -> bool:
+def _cookie_token(request: Request):
+    """Жетон, которому соответствует кука, или None."""
     sig = request.cookies.get("deergpt_auth")
     if not sig:
-        return False
-    return any(hmac.compare_digest(sig, _sign(t)) for t in _load_tokens())
+        return None
+    for t in _load_tokens():
+        if hmac.compare_digest(sig, _sign(t)):
+            return t
+    return None
+
+
+def _valid_cookie(request: Request) -> bool:
+    return _cookie_token(request) is not None
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return (request.headers.get("x-real-ip") or fwd.split(",")[0].strip()
+            or (request.client.host if request.client else ""))
+
+
+def _mask(password: str) -> str:
+    return f"{password[:2]}…({len(password)})" if password else ""
 
 
 @app.post("/auth")
@@ -190,6 +211,7 @@ async def auth(request: Request):
                 f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{password}\n")
         except OSError:
             pass
+        activity.log_event("auth_ok", password, _client_ip(request), request.headers.get("user-agent"))
         resp = Response(content='{"ok":true}', media_type="application/json")
         resp.set_cookie(
             "deergpt_auth",
@@ -199,13 +221,17 @@ async def auth(request: Request):
             samesite="lax",
         )
         return resp
+    activity.log_event("auth_fail", _mask(password), _client_ip(request), request.headers.get("user-agent"))
     return Response(content='{"ok":false}', media_type="application/json", status_code=401)
 
 
 @app.post("/voice")
 async def voice(request: Request, file: UploadFile = File(...)):
-    if not _valid_cookie(request):
+    token = _cookie_token(request)
+    if token is None:
         raise HTTPException(status_code=401, detail="unauthorized")
+    t_start = time.monotonic()
+    rec = {"token": token, "ip": _client_ip(request), "status": "error"}
 
     uid = uuid.uuid4().hex
     safe_name = os.path.basename(file.filename or "audio.webm")
@@ -216,18 +242,29 @@ async def voice(request: Request, file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buf)
 
     try:
+        t = time.monotonic()
         query_text = _transcribe(input_path)
+        rec["question"], rec["stt_s"] = query_text, round(time.monotonic() - t, 2)
         logging.info(f"[voice] STT text: {query_text!r}")
 
         fact_mode = is_fact_request(query_text)
+        rec["mode"] = "fact" if fact_mode else "rag"
+        rag_status = "ok"
+        t = time.monotonic()
         try:
             rag_answer = answer_fact(query_text) if fact_mode else answer_with_rag(query_text)
         except Exception:
             logging.exception("[voice] RAG error")
             rag_answer = ""
+            rag_status = "rag_error"
+        rec["answer_s"] = round(time.monotonic() - t, 2)
 
         tts_text = _sanitize_tts(rag_answer or "Извините, не удалось получить ответ.")
+        rec["answer"] = tts_text
+        t = time.monotonic()
         _synthesize(tts_text, output_path, TTS_FACT_INSTRUCTIONS if fact_mode else "")
+        rec["tts_s"] = round(time.monotonic() - t, 2)
+        rec["status"] = rag_status
 
         return FileResponse(output_path, media_type="audio/mpeg", filename=f"{uid}.mp3")
 
@@ -236,6 +273,8 @@ async def voice(request: Request, file: UploadFile = File(...)):
         return Response(content="processing error", media_type="text/plain", status_code=500)
 
     finally:
+        rec["total_s"] = round(time.monotonic() - t_start, 2)
+        activity.log_qa(**rec)
         try:
             os.remove(input_path)
         except OSError:
@@ -248,3 +287,79 @@ async def get_tts(uid: str):
     if os.path.exists(path):
         return FileResponse(path, media_type="audio/mpeg", filename=f"{uid}.mp3")
     return {"status": "not_found"}
+
+
+# --- Админка ---
+import asyncio
+from fastapi.responses import JSONResponse
+
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+ADMIN_COOKIE = "deergpt_admin"
+
+
+def _admin_sig() -> str:
+    return hmac.new(AUTH_SECRET.encode(), ("admin:" + ADMIN_PASSWORD).encode(), hashlib.sha256).hexdigest()
+
+
+def _require_admin(request: Request) -> None:
+    sig = request.cookies.get(ADMIN_COOKIE, "")
+    if not ADMIN_PASSWORD or not sig or not hmac.compare_digest(sig, _admin_sig()):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+@app.post("/admin/login")
+async def admin_login(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    password = (body.get("password") or "").strip()
+    ip, ua = _client_ip(request), request.headers.get("user-agent")
+    if ADMIN_PASSWORD and hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode()):
+        activity.log_event("admin_ok", None, ip, ua)
+        resp = JSONResponse({"ok": True})
+        resp.set_cookie(ADMIN_COOKIE, _admin_sig(), max_age=60 * 60 * 12,
+                        httponly=True, secure=True, samesite="strict", path="/api/admin")
+        return resp
+    activity.log_event("admin_fail", _mask(password), ip, ua)
+    await asyncio.sleep(1.5)
+    return JSONResponse({"ok": False}, status_code=401)
+
+
+@app.post("/admin/logout")
+async def admin_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(ADMIN_COOKIE, path="/api/admin")
+    return resp
+
+
+@app.get("/admin/me")
+def admin_me(request: Request):
+    _require_admin(request)
+    return {"ok": True}
+
+
+@app.get("/admin/summary")
+def admin_summary(request: Request):
+    _require_admin(request)
+    rows = activity.summary()
+    known = _load_tokens()
+    seen = {r["token"] for r in rows}
+    for r in rows:
+        r["active"] = r["token"] in known
+    for t in sorted(known - seen):
+        rows.append({"token": t, "logins": 0, "questions": 0,
+                     "first_seen": None, "last_seen": None, "active": True})
+    return {"tokens": rows, "total_tokens": len(known)}
+
+
+@app.get("/admin/qa")
+def admin_qa(request: Request, token: str = "", limit: int = 200):
+    _require_admin(request)
+    return {"items": activity.recent_qa(token or None, max(1, min(limit, 1000)))}
+
+
+@app.get("/admin/events")
+def admin_events(request: Request, limit: int = 200):
+    _require_admin(request)
+    return {"items": activity.recent_events(max(1, min(limit, 1000)))}

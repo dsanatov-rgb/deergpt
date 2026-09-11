@@ -24,3 +24,4 @@ tokens.txt
 *.bak_*
 facts_done*.txt
 herodotus4.html
+activity.db*

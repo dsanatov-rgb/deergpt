@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Журнал DeerGPT</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+:root{
+  --felt:#1c1612; --panel:#271e17; --line:#3b2f25; --gold:#d4a843; --gold-dim:#8f7240;
+  --parch:#eee4cf; --answer:#cfbf9f; --muted:#a8977c; --ochre:#d0694a;
+  --sans:Aptos,"Segoe UI",system-ui,-apple-system,sans-serif;
+  --serif:"Iowan Old Style",Palatino,"Palatino Linotype",Georgia,serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--felt);color:var(--parch);font:15px/1.5 var(--sans)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.hidden{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+input[type=password],input[type=search],select{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:9px 12px}
+.btn{background:transparent;border:1px solid var(--gold-dim);color:var(--gold);border-radius:6px;padding:7px 14px;cursor:pointer}
+.btn:hover{border-color:var(--gold)}
+.btn[aria-pressed=true]{background:var(--panel)}
+.btn.primary{background:var(--gold);border-color:var(--gold);color:var(--felt);width:100%;margin-top:12px;padding:10px}
+.btn:disabled{opacity:.6;cursor:wait}
+
+#login{min-height:100vh;display:grid;place-items:center;padding:24px}
+#login form{width:min(320px,100%);text-align:center}
+#login img{width:96px;height:auto;margin-bottom:10px}
+#login h1{font:400 24px/1.3 var(--serif);margin:0 0 20px}
+.err{color:var(--ochre);min-height:1.5em;margin:10px 0 0}
+
+header{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header img{width:40px;height:auto}
+header h1{font:400 22px/1.2 var(--serif);margin:0;flex:1}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--muted);font-size:13px;margin-right:6px}
+#stats{margin:0;padding:14px 24px;color:var(--muted);font:17px/1.55 var(--serif)}
+#stats b{color:var(--parch);font-weight:600}
+#stats b.bad{color:var(--ochre)}
+
+main{display:grid;grid-template-columns:minmax(260px,330px) 1fr;border-top:1px solid var(--line)}
+section{padding:18px 24px;min-width:0}
+#tokens{border-right:1px solid var(--line)}
+h2{font:400 19px/1.3 var(--serif);margin:0 0 6px;color:var(--gold)}
+.hint{color:var(--muted);font-size:13px;margin:0 0 10px}
+
+.tok{display:grid;grid-template-columns:1fr auto;gap:0 10px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:9px 8px;cursor:pointer}
+.tok:hover{background:var(--panel)}
+.tok[aria-pressed=true]{background:var(--panel);box-shadow:inset 3px 0 0 var(--gold)}
+.tok .name{font-weight:600;overflow-wrap:anywhere}
+.tok .count{color:var(--gold);text-align:right}
+.tok .meta{grid-column:1/-1;color:var(--muted);font-size:13px}
+.tok.unused{opacity:.5}
+.tok.revoked .name{text-decoration:line-through}
+
+.filters{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px}
+.filters select{width:auto;flex:0 0 auto}
+.filters input{width:auto;flex:1 1 200px}
+.qa{padding:14px 0;border-bottom:1px solid var(--line);max-width:78ch}
+.qa-head{display:flex;gap:12px;flex-wrap:wrap;align-items:baseline;color:var(--muted);font-size:13px}
+.who{background:none;border:0;padding:0;cursor:pointer;color:var(--parch);text-decoration:underline dotted var(--gold-dim);text-underline-offset:3px}
+.tag.fact{color:var(--gold)}
+.tag.bad{color:var(--ochre)}
+.dur{cursor:help}
+.q{font:400 18px/1.55 var(--serif);margin:6px 0 4px}
+.a{font:italic 400 16px/1.65 var(--serif);color:var(--answer);margin:0}
+.empty{color:var(--muted);padding:18px 0}
+
+details{padding:18px 24px;border-top:1px solid var(--line)}
+summary{cursor:pointer;font:400 19px/1.3 var(--serif);color:var(--gold)}
+.table-wrap{overflow-x:auto;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:7px 12px 7px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:400}
+td.bad{color:var(--ochre)}
+
+@media (max-width:820px){
+  main{grid-template-columns:1fr}
+  #tokens{border-right:0;border-bottom:1px solid var(--line)}
+  #tok-list{max-height:40vh;overflow-y:auto}
+  header,#stats,section,details{padding-left:16px;padding-right:16px}
+}
+</style>
+</head>
+<body>
+
+<div id="login" class="hidden">
+  <form id="login-form">
+    <img src="/deer.png" alt="">
+    <h1>Журнал DeerGPT</h1>
+    <label for="pw" class="sr">Пароль журнала</label>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="Пароль журнала" required>
+    <button class="btn primary" type="submit">Войти</button>
+    <p class="err" role="alert"></p>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <img src="/deer.png" alt="">
+    <h1>Журнал DeerGPT</h1>
+    <div class="tools">
+      <span id="updated" class="muted"></span>
+      <button id="reveal" class="btn" type="button" aria-pressed="false">Показать пароли</button>
+      <button id="refresh" class="btn" type="button">Обновить</button>
+      <button id="logout" class="btn" type="button">Выйти</button>
+    </div>
+  </header>
+  <p id="stats"></p>
+  <main>
+    <section id="tokens" aria-labelledby="tok-title">
+      <h2 id="tok-title">Жетоны</h2>
+      <p class="hint">Справа — число вопросов. Нажмите на жетон, чтобы оставить в ленте только его вопросы.</p>
+      <div id="tok-list"></div>
+    </section>
+    <section id="feed-sec" aria-labelledby="feed-title">
+      <h2 id="feed-title">Вопросы и ответы</h2>
+      <div class="filters">
+        <label for="mode" class="sr">Какие ответы показывать</label>
+        <select id="mode">
+          <option value="">Все ответы</option>
+          <option value="fact">Только факты</option>
+          <option value="rag">Только ответы по текстам</option>
+          <option value="err">Только сбои</option>
+        </select>
+        <label for="q" class="sr">Поиск по вопросам и ответам</label>
+        <input id="q" type="search" placeholder="Поиск по вопросам и ответам">
+      </div>
+      <div id="feed"></div>
+    </section>
+  </main>
+  <details id="events">
+    <summary>Журнал входов<span id="ev-count"></span></summary>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Время</th><th>Событие</th><th>Жетон</th><th>IP</th><th>Устройство</th></tr></thead>
+        <tbody id="ev-body"></tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const state = {tokens: [], total: 0, qa: [], events: [], token: '', reveal: false, timer: null};
+const dayKey = d => d.toDateString();
+
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') n.className = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids) if (c != null && c !== false) n.append(c instanceof Node ? c : String(c));
+  return n;
+}
+
+const plural = (n, one, few, many) => {
+  const a = n % 10, b = n % 100;
+  return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many;
+};
+const sec = v => v == null ? '—' : Number(v).toLocaleString('ru-RU', {maximumFractionDigits: 1}) + ' с';
+const show = t => !t ? '—' : state.reveal ? t : t.slice(0, 2) + '•••' + t.slice(-1);
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const hm = d.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+  const now = new Date();
+  if (dayKey(d) === dayKey(now)) return 'сегодня ' + hm;
+  now.setDate(now.getDate() - 1);
+  if (dayKey(d) === dayKey(now)) return 'вчера ' + hm;
+  return d.toLocaleDateString('ru-RU', {day: 'numeric', month: 'short'}) + ' ' + hm;
+}
+
+function uaShort(ua) {
+  if (!ua) return '';
+  const dev = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+    : /Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '';
+  const br = /YaBrowser/.test(ua) ? 'Яндекс Браузер' : /Edg\//.test(ua) ? 'Edge' : /Firefox\/|FxiOS/.test(ua) ? 'Firefox'
+    : /Chrome\/|CriOS/.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : /^curl/.test(ua) ? 'curl' : '';
+  return [dev, br].filter(Boolean).join(', ') || ua.slice(0, 40);
+}
+
+async function api(path, opts) {
+  const r = await fetch('/api/admin/' + path, Object.assign({credentials: 'same-origin'}, opts));
+  if (r.status === 401) { showLogin(); throw new Error('unauthorized'); }
+  if (!r.ok) throw new Error('сервер ответил ' + r.status);
+  return r.json();
+}
+
+function showLogin() {
+  clearInterval(state.timer); state.timer = null;
+  $('#app').classList.add('hidden');
+  $('#login').classList.remove('hidden');
+  $('#pw').focus();
+}
+
+async function start() {
+  $('#login').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  await load();
+  if (!state.timer && !$('#app').classList.contains('hidden'))
+    state.timer = setInterval(() => { if (!document.hidden) load(); }, 60000);
+}
+
+async function load() {
+  try {
+    const [s, q, e] = await Promise.all([api('summary'), api('qa?limit=1000'), api('events?limit=300')]);
+    state.tokens = s.tokens; state.total = s.total_tokens; state.qa = q.items; state.events = e.items;
+    render();
+    $('#updated').textContent = 'Обновлено в ' + new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+  } catch (err) {
+    if (err.message !== 'unauthorized') $('#updated').textContent = 'Не удалось обновить: ' + err.message;
+  }
+}
+
+function render() { renderStats(); renderTokens(); renderFeed(); renderEvents(); }
+
+function renderStats() {
+  const today = dayKey(new Date());
+  const qToday = state.qa.filter(r => dayKey(new Date(r.ts)) === today);
+  const total = state.tokens.reduce((a, r) => a + (r.questions || 0), 0);
+  const used = state.tokens.filter(r => r.active && (r.logins || r.questions)).length;
+  const ok = state.qa.filter(r => r.status === 'ok' && r.total_s != null).slice(0, 50);
+  const avg = ok.length ? ok.reduce((a, r) => a + r.total_s, 0) / ok.length : null;
+  const bad = qToday.filter(r => r.status !== 'ok').length;
+  const b = v => el('b', null, v);
+  const p = $('#stats');
+  p.replaceChildren('Сегодня ', b(qToday.length), ' ' + plural(qToday.length, 'вопрос', 'вопроса', 'вопросов') + ', всего ', b(total),
+    '. Пользовались ', b(used), ' ' + plural(used, 'жетоном', 'жетонами', 'жетонами') + ' из ' + state.total + '.');
+  if (avg != null) p.append(' Ответ в среднем за ', b(sec(avg)), '.');
+  if (bad) p.append(' Сбоев сегодня: ', el('b', {class: 'bad'}, bad), '.');
+}
+
+function selectToken(t) {
+  state.token = t;
+  renderTokens(); renderFeed();
+  if (t && matchMedia('(max-width: 820px)').matches) $('#feed-sec').scrollIntoView({block: 'start'});
+}
+
+function renderTokens() {
+  const list = $('#tok-list');
+  const btn = (token, name, count, meta, cls, title) => el('button', {
+      type: 'button', class: 'tok' + (cls || ''), 'aria-pressed': String(state.token === token), title,
+      onclick: () => selectToken(token)},
+    el('span', {class: 'name'}, name), el('span', {class: 'count'}, count), el('span', {class: 'meta'}, meta));
+  const total = state.tokens.reduce((a, r) => a + (r.questions || 0), 0);
+  const rows = [btn('', 'Все жетоны', total, 'вся лента')];
+  for (const r of state.tokens) {
+    const usedT = r.logins || r.questions;
+    rows.push(btn(r.token, show(r.token), r.questions || 0,
+      usedT ? 'был ' + fmtTime(r.last_seen) + ', ' + r.logins + ' ' + plural(r.logins, 'вход', 'входа', 'входов') : 'ещё не пользовались',
+      (usedT ? '' : ' unused') + (r.active ? '' : ' revoked'),
+      r.active ? null : 'Этого жетона больше нет в tokens.txt'));
+  }
+  list.replaceChildren(...rows);
+}
+
+function renderFeed() {
+  const mode = $('#mode').value, s = $('#q').value.trim().toLowerCase();
+  let items = state.qa;
+  if (state.token) items = items.filter(r => r.token === state.token);
+  if (mode === 'fact' || mode === 'rag') items = items.filter(r => r.mode === mode);
+  if (mode === 'err') items = items.filter(r => r.status !== 'ok');
+  if (s) items = items.filter(r => (r.question || '').toLowerCase().includes(s) || (r.answer || '').toLowerCase().includes(s));
+  $('#feed-title').textContent = state.token ? 'Вопросы жетона ' + show(state.token) : 'Вопросы и ответы';
+  const feed = $('#feed');
+  if (!items.length) {
+    feed.replaceChildren(el('p', {class: 'empty'}, state.qa.length
+      ? 'Под этот фильтр ничего не подходит. Очистите поиск или выберите «Все жетоны».'
+      : 'Вопросов пока нет. Они появятся здесь, когда посетитель спросит что-нибудь на сайте.'));
+    return;
+  }
+  const out = items.slice(0, 300).map(r => {
+    const modeLabel = r.mode === 'fact' ? 'факт' : r.mode === 'rag' ? 'по текстам' : 'режим не определён';
+    const statusLabel = r.status === 'ok' ? null : r.status === 'rag_error' ? 'ответ не получен' : 'сбой';
+    return el('article', {class: 'qa'},
+      el('div', {class: 'qa-head'},
+        el('time', {datetime: r.ts}, fmtTime(r.ts)),
+        el('button', {type: 'button', class: 'who', title: 'Показать вопросы этого жетона', onclick: () => selectToken(r.token)}, show(r.token)),
+        el('span', {class: 'tag' + (r.mode === 'fact' ? ' fact' : '')}, modeLabel),
+        statusLabel && el('span', {class: 'tag bad'}, statusLabel),
+        el('span', {class: 'dur', title: `распознавание ${sec(r.stt_s)}, ответ ${sec(r.answer_s)}, озвучка ${sec(r.tts_s)}`}, sec(r.total_s))),
+      el('p', {class: 'q'}, r.question || 'Речь не распознана'),
+      el('p', {class: 'a'}, r.answer || '—'));
+  });
+  if (items.length > 300) out.push(el('p', {class: 'empty'}, `Показаны последние 300 из ${items.length}. Уточните поиск, чтобы найти более ранние.`));
+  feed.replaceChildren(...out);
+}
+
+const KIND = {
+  auth_ok: ['Вход по жетону', ''], auth_fail: ['Неверный жетон', 'bad'],
+  admin_ok: ['Вход в журнал', ''], admin_fail: ['Неверный пароль журнала', 'bad'],
+};
+
+function renderEvents() {
+  const rows = state.events.map(e => {
+    const [label, cls] = KIND[e.kind] || [e.kind, ''];
+    const tok = e.kind.endsWith('_fail') ? (e.token || '—') : e.kind === 'auth_ok' ? show(e.token) : '—';
+    return el('tr', null,
+      el('td', null, fmtTime(e.ts)), el('td', {class: cls || null}, label), el('td', null, tok),
+      el('td', null, e.ip || '—'), el('td', {title: e.ua || null}, uaShort(e.ua) || '—'));
+  });
+  if (!rows.length) rows.push(el('tr', null, el('td', {colspan: '5', class: 'empty'}, 'Входов пока не было.')));
+  $('#ev-body').replaceChildren(...rows);
+  $('#ev-count').textContent = state.events.length ? ` (${state.events.length})` : '';
+}
+
+$('#login-form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const btn = $('#login-form button'), err = $('#login .err');
+  btn.disabled = true; err.textContent = '';
+  try {
+    const r = await fetch('/api/admin/login', {method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: $('#pw').value})});
+    if (r.ok) { $('#pw').value = ''; await start(); }
+    else err.textContent = r.status === 401 ? 'Пароль не подошёл. Проверьте раскладку и регистр.' : 'Сервер ответил ошибкой ' + r.status + '. Попробуйте через минуту.';
+  } catch (e) {
+    err.textContent = 'Нет связи с сервером. Проверьте интернет и VPN.';
+  } finally { btn.disabled = false; }
+});
+$('#reveal').addEventListener('click', () => {
+  state.reveal = !state.reveal;
+  $('#reveal').setAttribute('aria-pressed', String(state.reveal));
+  $('#reveal').textContent = state.reveal ? 'Скрыть пароли' : 'Показать пароли';
+  render();
+});
+$('#refresh').addEventListener('click', load);
+$('#logout').addEventListener('click', async () => {
+  try { await fetch('/api/admin/logout', {method: 'POST', credentials: 'same-origin'}); } catch (e) {}
+  showLogin();
+});
+$('#mode').addEventListener('change', renderFeed);
+$('#q').addEventListener('input', renderFeed);
+
+fetch('/api/admin/me', {credentials: 'same-origin'}).then(r => r.ok ? start() : showLogin()).catch(showLogin);
+})();
+</script>
+</body>
+</html>
