@@ -25,6 +25,8 @@ activity.init()
 stt_client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url=os.getenv("OPENAI_API_BASE", "https://api.proxyapi.ru/openai/v1"),
+    timeout=float(os.getenv("STT_TIMEOUT", "20")),
+    max_retries=1,
 )
 STT_MODEL = os.getenv("STT_MODEL", "whisper-1")
 TTS_MODEL = os.getenv("TTS_MODEL", "gpt-4o-mini-tts")

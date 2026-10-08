@@ -37,6 +37,8 @@ embeddings = OpenAIEmbeddings(
     openai_api_key=os.getenv("OPENAI_API_KEY"),
     openai_api_base=os.getenv("OPENAI_API_BASE", "https://api.proxyapi.ru/openai/v1"),
     model=os.getenv("EMBED_MODEL", "text-embedding-3-small"),
+    request_timeout=float(os.getenv("EMBED_TIMEOUT", "10")),
+    max_retries=1,
 )  # [attached_file:1]
 
 llm = ChatOpenAI(
@@ -45,6 +47,8 @@ llm = ChatOpenAI(
     model=os.getenv("CHAT_MODEL", "gpt-5.4-nano"),
     temperature=float(os.getenv("CHAT_TEMPERATURE", "0.2")),
     max_tokens=int(os.getenv("CHAT_MAX_TOKENS", "140")),
+    request_timeout=float(os.getenv("CHAT_TIMEOUT", "20")),
+    max_retries=1,
 )  # [attached_file:1]
 
 def _clean_context(s: str) -> str:
